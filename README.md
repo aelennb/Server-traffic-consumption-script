@@ -37,3 +37,7 @@
 6.执行脚本
 
 ```./download.sh```
+
+![image](https://github.com/aelennb/Server-traffic-consumption-script/blob/main/img/download.png)
+
+
