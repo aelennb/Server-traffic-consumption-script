@@ -8,7 +8,7 @@
 ```sudo apt install aria2```
 
 下载脚本
-
+```curl -O https://raw.githubusercontent.com/aelennb/Server-traffic-consumption-script/refs/heads/main/download.sh```
 
 赋予执行权限
 ```chmod +x download.sh```
