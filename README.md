@@ -42,7 +42,7 @@
 
 ***此脚本支持带参数执行***
 
-```./traffic.sh [$(MB)]```
+```./download.sh [$(MB)]```
 
 ![image](https://github.com/aelennb/Server-traffic-consumption-script/blob/main/img/download.png)
 
