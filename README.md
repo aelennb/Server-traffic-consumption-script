@@ -3,7 +3,7 @@
 
 测试系统为Debian12.13
 
-添加了对Alpine系统的支持
+添加了对Alpine系统的支持（仅做了简单适配）
 
 使用方法：
 
@@ -13,7 +13,9 @@
 
 2.安装Aria2
 
-```sudo apt install aria2```
+Debian：```sudo apt install aria2```
+
+Alpine：```sudo apk add aria2```
 
 3.下载脚本
 
@@ -23,7 +25,9 @@
 
  4.1编辑download.sh
 
-```nano download.sh```
+Debian：```nano download.sh```
+
+Alpine：```vi download.sh```
 
  4.2修改大文件URL
 
