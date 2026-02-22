@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 流量消耗脚本 - 终极无刷屏版（彻底屏蔽PID输出）
+# 流量消耗脚本
 # ===================== 配置区 =====================
 FILE_URL="自己填大文件地址"
 NETWORK_INTERFACE="eth0"  # 网卡（自己改：eth0、ens3、ens160、eth1等）
@@ -33,11 +33,17 @@ check_deps() {
     local deps="aria2c bc stat truncate"
     for cmd in $deps; do
         if ! command -v $cmd &> /dev/null; then
+            # 适配Debian/Ubuntu
             if [ -f /etc/debian_version ]; then
                 apt update -y >/dev/null 2>&1
                 apt install -y $cmd >/dev/null 2>&1
+            # 适配CentOS/RHEL
             elif [ -f /etc/redhat-release ]; then
                 yum install -y $cmd >/dev/null 2>&1
+            # 适配Alpine
+            elif [ -f /etc/alpine-release ]; then
+                apk update >/dev/null 2>&1
+                apk add --no-cache $cmd >/dev/null 2>&1
             fi
         fi
     done
