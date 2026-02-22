@@ -95,6 +95,20 @@ clean_aria2_log_periodically() {
     done
 }
 
+# 清理aria2临时文件（新增：清理.aria2后缀文件和废弃的tmp文件）
+clean_aria2_temp_files() {
+    local file_path=$1
+    # 清理aria2的临时文件（.aria2后缀）
+    [ -f "${file_path}.aria2" ] && rm -f "${file_path}.aria2" >/dev/null 2>&1
+    # 清理历史废弃的tmp文件（tmp_数字 格式）
+    for old_file in tmp_*; do
+        # 排除当前正在使用的文件
+        if [ "$old_file" != "$file_path" ] && [[ "$old_file" =~ ^tmp_[0-9]+$ ]]; then
+            rm -f "$old_file" "${old_file}.aria2" >/dev/null 2>&1
+        fi
+    done
+}
+
 # 核心：静默监控文件大小（无任何进程检查输出）
 monitor_and_clean_file() {
     local file_path=$1
@@ -103,6 +117,8 @@ monitor_and_clean_file() {
     local cleaned_flag="/tmp/cleaned_$(basename $file_path).flag"
     
     rm -f $cleaned_flag
+    # 先清理一次历史临时文件
+    clean_aria2_temp_files "$file_path"
     # 彻底屏蔽进程检查的输出
     while [ -d /proc/$aria_pid ] && [ ! -f $cleaned_flag ]; do
         if [ -f "$file_path" ]; then
@@ -112,11 +128,14 @@ monitor_and_clean_file() {
 
             if (( file_size >= delete_size )); then
                 > "$file_path" && truncate -s 0 "$file_path"
+                # 清理对应的.aria2临时文件
+                [ -f "${file_path}.aria2" ] && rm -f "${file_path}.aria2" >/dev/null 2>&1
                 echo -e "\n${GREEN}✅ 触发清理：[$file_path]已达$(format_bytes_adaptive $delete_size)，已清空（下载继续）${NC}"
                 touch $cleaned_flag
                 # 持续清空，屏蔽所有输出
                 while [ -d /proc/$aria_pid ]; do
                     [ -f "$file_path" ] && truncate -s 0 "$file_path" 2>/dev/null
+                    [ -f "${file_path}.aria2" ] && rm -f "${file_path}.aria2" >/dev/null 2>&1
                     sleep 1
                 done
             fi
@@ -126,13 +145,14 @@ monitor_and_clean_file() {
     rm -f $cleaned_flag
 }
 
-# 退出清理
+# 退出清理（增强：全量清理临时文件）
 cleanup() {
-    rm -f tmp_* /tmp/cleaned_*.flag /tmp/aria2.log 2>/dev/null
+    # 清理所有tmp_*文件、.aria2后缀文件、标记文件、日志
+    rm -f tmp_* *.aria2 /tmp/cleaned_*.flag /tmp/aria2.log 2>/dev/null
     # 彻底屏蔽kill/pkill的输出
     pkill -P $$ 2>/dev/null
     wait 2>/dev/null
-    echo -e "\n${YELLOW}📦 清理临时文件完成${NC}"
+    echo -e "\n${YELLOW}📦 清理临时文件完成（含aria2临时文件）${NC}"
 }
 
 # ===================== 主程序 =====================
@@ -177,6 +197,9 @@ last_time=$(date +%s)
 aria_pid=0
 TMP_FILE="tmp_$task"
 
+# 启动前先清理一次残留的临时文件
+clean_aria2_temp_files "$TMP_FILE"
+
 # 先启动一次aria2（屏蔽所有输出）
 aria2c -x "$ARIA2_THREADS" -s "$ARIA2_THREADS" \
     --file-allocation=none --auto-file-renaming=false \
@@ -191,6 +214,8 @@ monitor_and_clean_file "$TMP_FILE" $DELETE_SIZE $aria_pid >/dev/null 2>&1 &
 while true; do
     # 检查aria2是否存活（用/proc目录，无ps命令，无输出）
     if [ ! -d /proc/$aria_pid ]; then
+        # 先清理上一个任务的临时文件
+        clean_aria2_temp_files "$TMP_FILE"
         task=$((task + 1))
         TMP_FILE="tmp_$task"
         aria2c -x "$ARIA2_THREADS" -s "$ARIA2_THREADS" \
