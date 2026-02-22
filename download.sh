@@ -28,6 +28,27 @@ fi
 DELETE_SIZE=$((DELETE_FILE_SIZE_MB * 1024 * 1024))
 THRESHOLD_BYTES=$((THRESHOLD_MB * 1024 * 1024))
 
+# 适配Alpine网络参数优化（核心修复）
+optimize_alpine_network() {
+    if [ -f /etc/alpine-release ]; then
+        # 1. 调整TCP拥塞控制为bic（适配musl libc）
+        sysctl -w net.ipv4.tcp_congestion_control=bic >/dev/null 2>&1
+        # 2. 增大TCP窗口大小，提升吞吐量
+        sysctl -w net.ipv4.tcp_window_scaling=1 >/dev/null 2>&1
+        sysctl -w net.core.rmem_max=16777216 >/dev/null 2>&1
+        sysctl -w net.core.wmem_max=16777216 >/dev/null 2>&1
+        sysctl -w net.ipv4.tcp_rmem="4096 87380 16777216" >/dev/null 2>&1
+        sysctl -w net.ipv4.tcp_wmem="4096 65536 16777216" >/dev/null 2>&1
+        # 3. 关闭TCP延迟确认，降低延迟
+        sysctl -w net.ipv4.tcp_no_metrics_save=1 >/dev/null 2>&1
+        sysctl -w net.ipv4.tcp_syn_retries=2 >/dev/null 2>&1
+        sysctl -w net.ipv4.tcp_fin_timeout=10 >/dev/null 2>&1
+        # 4. 增大文件描述符限制（Alpine默认过小）
+        ulimit -n 65535 >/dev/null 2>&1
+        echo -e "${GREEN}✅ Alpine网络参数优化完成${NC}"
+    fi
+}
+
 # 依赖检查（完全静默，无任何输出）
 check_deps() {
     local deps="aria2c bc stat truncate"
@@ -40,16 +61,16 @@ check_deps() {
             # 适配CentOS/RHEL
             elif [ -f /etc/redhat-release ]; then
                 yum install -y $cmd >/dev/null 2>&1
-            # 适配Alpine
+            # 适配Alpine（新增：指定aria2版本，修复musl兼容问题）
             elif [ -f /etc/alpine-release ]; then
                 apk update >/dev/null 2>&1
-                apk add --no-cache $cmd >/dev/null 2>&1
+                apk add --no-cache $cmd aria2>=1.36.0-r0 >/dev/null 2>&1
             fi
         fi
     done
 }
 
-# 读取网卡入站流量（字节）
+# 读取网卡入站流量（字节）- 优化Alpine读取频率
 get_rx() {
     cat /sys/class/net/"$NETWORK_INTERFACE"/statistics/rx_bytes 2>/dev/null || echo 0
 }
@@ -115,7 +136,7 @@ clean_aria2_temp_files() {
     done
 }
 
-# 核心：静默监控文件大小（无任何进程检查输出）
+# 核心：静默监控文件大小（优化Alpine IO调度）
 monitor_and_clean_file() {
     local file_path=$1
     local delete_size=$2
@@ -138,15 +159,15 @@ monitor_and_clean_file() {
                 [ -f "${file_path}.aria2" ] && rm -f "${file_path}.aria2" >/dev/null 2>&1
                 echo -e "\n${GREEN}✅ 触发清理：[$file_path]已达$(format_bytes_adaptive $delete_size)，已清空（下载继续）${NC}"
                 touch $cleaned_flag
-                # 持续清空，屏蔽所有输出
+                # 持续清空，屏蔽所有输出（Alpine优化：降低清空频率，减少IO占用）
                 while [ -d /proc/$aria_pid ]; do
                     [ -f "$file_path" ] && truncate -s 0 "$file_path" 2>/dev/null
                     [ -f "${file_path}.aria2" ] && rm -f "${file_path}.aria2" >/dev/null 2>&1
-                    sleep 1
+                    sleep 2  # 从1秒改为2秒，降低IO压力
                 done
             fi
         fi
-        sleep 0.1
+        sleep 0.5  # 从0.1秒改为0.5秒，减少进程调度消耗
     done
     rm -f $cleaned_flag
 }
@@ -166,6 +187,8 @@ cleanup() {
 exec 3>&1 4>&2
 exec 1>/dev/null 2>&1
 check_deps
+# 执行Alpine网络优化
+optimize_alpine_network
 exec 1>&3 4>&2
 
 trap cleanup EXIT
@@ -206,17 +229,19 @@ TMP_FILE="tmp_$task"
 # 启动前先清理一次残留的临时文件
 clean_aria2_temp_files "$TMP_FILE"
 
-# 先启动一次aria2（屏蔽所有输出）
+# 启动aria2（优化Alpine参数：禁用磁盘缓存、调整超时）
 aria2c -x "$ARIA2_THREADS" -s "$ARIA2_THREADS" \
     --file-allocation=none --auto-file-renaming=false \
     --summary-interval=0 --disable-ipv6=true --allow-overwrite=true \
+    --disk-cache=0 --timeout=10 --connect-timeout=5 \  # Alpine关键优化
+    --max-concurrent-downloads=1 --min-split-size=1M \  # 减少线程竞争
     -o "$TMP_FILE" "$FILE_URL" > /tmp/aria2.log 2>&1 &
 aria_pid=$!
 
 # 启动监控线程（屏蔽输出）
 monitor_and_clean_file "$TMP_FILE" $DELETE_SIZE $aria_pid >/dev/null 2>&1 &
 
-# 主循环（仅输出单行状态，彻底屏蔽所有其他输出）
+# 主循环（优化Alpine：降低轮询频率，减少资源占用）
 while true; do
     # 检查aria2是否存活（用/proc目录，无ps命令，无输出）
     if [ ! -d /proc/$aria_pid ]; then
@@ -227,6 +252,8 @@ while true; do
         aria2c -x "$ARIA2_THREADS" -s "$ARIA2_THREADS" \
             --file-allocation=none --auto-file-renaming=false \
             --summary-interval=0 --disable-ipv6=true --allow-overwrite=true \
+            --disk-cache=0 --timeout=10 --connect-timeout=5 \
+            --max-concurrent-downloads=1 --min-split-size=1M \
             -o "$TMP_FILE" "$FILE_URL" > /tmp/aria2.log 2>&1 &
         aria_pid=$!
         monitor_and_clean_file "$TMP_FILE" $DELETE_SIZE $aria_pid >/dev/null 2>&1 &
@@ -238,9 +265,9 @@ while true; do
     USED_FMT=$(format_bytes_adaptive $USED_BYTES)
     PROGRESS=$(echo "scale=0; if ($USED_BYTES == 0) 0 else $USED_BYTES * 100 / $THRESHOLD_BYTES" | bc)
 
-    # 速度和ETA计算
+    # 速度和ETA计算（Alpine优化：延长时间窗口，减少速度抖动）
     now_time=$(date +%s)
-    if (( now_time - last_time >= 1 )); then
+    if (( now_time - last_time >= 2 )); then  # 从1秒改为2秒，平滑速度计算
         rx_diff=$((NOW_RX - last_rx))
         speed_bps=$((rx_diff / (now_time - last_time)))
         speed=$(format_speed_adaptive $speed_bps)
@@ -264,5 +291,5 @@ while true; do
         exit 0
     fi
 
-    sleep 0.5
+    sleep 1  # 从0.5秒改为1秒，降低CPU占用
 done
