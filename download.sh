@@ -1,11 +1,12 @@
 #!/bin/bash
 
-# 流量消耗脚本
+# 流量消耗脚本（新增可选限速参数，单位MB/s）
 # ===================== 配置区 =====================
 FILE_URL="自己填大文件地址"
 NETWORK_INTERFACE="eth0"  # 网卡（自己改：eth0、ens3、ens160、eth1等）
 ARIA2_THREADS=16  # Aria2线程数，最大16
 DEFAULT_THRESHOLD=200  # 默认阈值（单位：MB）
+DEFAULT_RATE_LIMIT_MB=0  # 默认不限速（单位：MB/s，0表示不限速）
 DELETE_FILE_SIZE_MB=1024   # 1G清理阈值（单位：MB）
 LOG_CLEAN_INTERVAL=43200   # 12小时（单位：秒）
 # ===================== 配置结束 =====================
@@ -17,16 +18,34 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# 处理流量阈值参数
+# 处理流量阈值参数（第一个参数）
 if [ $# -ge 1 ]; then
     [[ "$1" =~ ^[0-9]+$ ]] && THRESHOLD_MB="$1" || { echo -e "${RED}错误：阈值必须是纯数字（单位MB）${NC}"; exit 1; }
 else
     THRESHOLD_MB=$DEFAULT_THRESHOLD
 fi
 
+# 处理限速参数（第二个参数，单位MB/s）
+if [ $# -ge 2 ]; then
+    if [[ "$2" =~ ^[0-9]+$ ]]; then
+        RATE_LIMIT_MB="$2"
+    else
+        echo -e "${RED}错误：限速必须是纯数字（单位MB/s）${NC}"; exit 1
+    fi
+else
+    RATE_LIMIT_MB=$DEFAULT_RATE_LIMIT_MB
+fi
+
 # 单位转换（字节）
 DELETE_SIZE=$((DELETE_FILE_SIZE_MB * 1024 * 1024))
 THRESHOLD_BYTES=$((THRESHOLD_MB * 1024 * 1024))
+
+# 构造aria2限速参数（仅当限速>0时使用）
+if (( RATE_LIMIT_MB > 0 )); then
+    LIMIT_PARAM="--max-download-limit=${RATE_LIMIT_MB}M"
+else
+    LIMIT_PARAM=""
+fi
 
 # 适配Alpine网络参数优化（核心修复）
 optimize_alpine_network() {
@@ -207,6 +226,12 @@ echo -e "${GREEN}目标流量：${THRESHOLD_MB} MB (${THRESHOLD_FMT})${NC}"
 echo -e "${GREEN}下载地址：${FILE_URL}${NC}"
 echo -e "${GREEN}监控网卡：${NETWORK_INTERFACE}${NC}"
 echo -e "${GREEN}aria2 线程：${ARIA2_THREADS}${NC}"
+# 显示限速状态
+if (( RATE_LIMIT_MB > 0 )); then
+    echo -e "${GREEN}下载限速：${RATE_LIMIT_MB} MB/s${NC}"
+else
+    echo -e "${GREEN}下载限速：不限速${NC}"
+fi
 echo -e "${YELLOW}文件清理阈值：${DELETE_FILE_SIZE_MB} MB${NC}"
 echo -e "${YELLOW}=====================================${NC}\n"
 
@@ -229,12 +254,13 @@ TMP_FILE="tmp_$task"
 # 启动前先清理一次残留的临时文件
 clean_aria2_temp_files "$TMP_FILE"
 
-# 启动aria2（优化Alpine参数：禁用磁盘缓存、调整超时）
+# 启动aria2（优化Alpine参数：禁用磁盘缓存、调整超时，并注入可选的限速参数）
 aria2c -x "$ARIA2_THREADS" -s "$ARIA2_THREADS" \
     --file-allocation=none --auto-file-renaming=false \
     --summary-interval=0 --disable-ipv6=true --allow-overwrite=true \
-    --disk-cache=0 --timeout=10 --connect-timeout=5 \  # Alpine关键优化
-    --max-concurrent-downloads=1 --min-split-size=1M \  # 减少线程竞争
+    --disk-cache=0 --timeout=10 --connect-timeout=5 \
+    --max-concurrent-downloads=1 --min-split-size=1M \
+    $LIMIT_PARAM \
     -o "$TMP_FILE" "$FILE_URL" > /tmp/aria2.log 2>&1 &
 aria_pid=$!
 
@@ -254,6 +280,7 @@ while true; do
             --summary-interval=0 --disable-ipv6=true --allow-overwrite=true \
             --disk-cache=0 --timeout=10 --connect-timeout=5 \
             --max-concurrent-downloads=1 --min-split-size=1M \
+            $LIMIT_PARAM \
             -o "$TMP_FILE" "$FILE_URL" > /tmp/aria2.log 2>&1 &
         aria_pid=$!
         monitor_and_clean_file "$TMP_FILE" $DELETE_SIZE $aria_pid >/dev/null 2>&1 &
