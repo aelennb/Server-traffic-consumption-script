@@ -5,6 +5,8 @@
 
 添加了对Alpine系统的支持（仅做了简单适配）
 
+upload.sh搭配这个网站使用[`https://iperf3serverlist.net`](https://iperf3serverlist.net)
+
 使用方法：
 
 1.获取网卡名称
