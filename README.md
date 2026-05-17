@@ -14,12 +14,15 @@
 2.安装Aria2
 
 Debian：```sudo apt install aria2```
+```sudo apt install iperf3```
 
 Alpine：```sudo apk add aria2```
 
 3.下载脚本
 
 ```curl -O https://raw.githubusercontent.com/aelennb/Server-traffic-consumption-script/refs/heads/main/download.sh```
+
+```curl -O https://raw.githubusercontent.com/aelennb/Server-traffic-consumption-script/refs/heads/main/upload.sh```
 
 4.修改配置
 
