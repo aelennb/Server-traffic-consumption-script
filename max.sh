@@ -9,24 +9,24 @@
 
 # ===================== 配置区 =====================
 # ----- 网络接口 -----
-NETWORK_INTERFACE="eth0"          # 监控网卡，请用 ip link 查看实际名称
+NETWORK_INTERFACE=""          # 监控网卡，请用 ip link 查看实际名称
 
 # ----- 总流量目标（核心） -----
 # 累计消耗达到该值后停止任务；0 表示无限运行
 # 单位 MB：10240 = 10GB，51200 = 50GB
-TOTAL_TRAFFIC_MB=0
+TOTAL_TRAFFIC_MB=
 
 # 达标后的动作：exit = 退出脚本；shutdown = 关闭服务器
 ACTION_WHEN_DONE="exit"
 
 # ----- 上传流量配置（iperf3） -----
-UPLOAD_SERVER_IP="speedtest.hkg12.hk.leaseweb.net"      # iperf3 服务端 IP
+UPLOAD_SERVER_IP=""      # iperf3 服务端 IP
 UPLOAD_SERVER_PORT=5201
-UPLOAD_PARALLEL=3
+UPLOAD_PARALLEL=1
 UPLOAD_RATE_LIMIT_MBPS=0          # 0=不限速
 
 # ----- 下载流量配置（aria2c） -----
-DOWNLOAD_FILE_URL="http://hkg.download.datapacket.com/10000mb.bin"              # 大文件直链（必填，否则下载任务失败）
+DOWNLOAD_FILE_URL=""              # 大文件直链（必填，否则下载任务失败）
 DOWNLOAD_ARIA2_THREADS=16
 DOWNLOAD_RATE_LIMIT_MB=0
 DOWNLOAD_DELETE_FILE_SIZE_MB=1024
