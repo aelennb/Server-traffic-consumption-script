@@ -24,6 +24,8 @@ Alpine：```sudo apk add aria2```
 
 ```curl -O https://raw.githubusercontent.com/aelennb/Server-traffic-consumption-script/refs/heads/main/download.sh```
 
+```curl -O https://raw.githubusercontent.com/aelennb/Server-traffic-consumption-script/refs/heads/main/max.sh```
+
 ```curl -O https://raw.githubusercontent.com/aelennb/Server-traffic-consumption-script/refs/heads/main/upload.sh```
 
 4.修改配置
