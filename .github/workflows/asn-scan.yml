@@ -20,34 +20,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y masscan prips python3 curl jq
 
-      # 2. 克隆并预处理仓库
+      # 2. 克隆项目
       - name: Clone Scanner Repository
         run: |
           git clone --depth 1 https://github.com/122440367/ASNIPtest-New.git scanner-src
           cd scanner-src
-          
-          # 核心修复 1：确保当前 runner 用户对目录有完全读写权限
-          chmod -R 777 ./
-          
-          # 核心修复 2：去除项目内部脚本可能带有的 sudo（避免生成 root 权限文件）
-          # 我们通过 setcap 已经赋予了 masscan 权限，不需要 sudo
-          find . -type f -name "*.py" -exec sed -i 's/sudo masscan/masscan/g' {} +
-          
           chmod +x *.py 2>/dev/null || true
 
-      # 3. 赋予 masscan 底层权限并运行扫描
+      # 3. 使用 root 权限运行（彻底解决 masscan 权限问题）
       - name: Run ASN IP Scan
         run: |
           cd scanner-src
           
-          TARGET_ASNS="AS62468" # 替换为你要扫描的 ASN
+          # --- 配置区域 ---
+          TARGET_ASNS="AS62468"
+          # ----------------
+          
           echo "开始扫描 ASN: $TARGET_ASNS"
           
-          # 赋予 masscan 无需 root 即可发送原始包的权限
-          sudo setcap cap_net_raw+ep /usr/bin/masscan
+          # 核心修复：直接以 root 身份运行脚本
+          # 这样里面的 masscan 拥有最高权限，且生成的文件也属于 root
+          sudo python3 run.py $TARGET_ASNS
           
-          # 正常以 runner 用户运行 Python 脚本
-          python3 run.py $TARGET_ASNS
+          # 关键收尾：把整个目录的属主改回 runner 用户
+          # 否则下一步的 upload-artifact 会因为无法读取 root 文件而失败
+          sudo chown -R $USER:$USER .
 
       # 4. 上传结果 CSV
       - name: Upload Results
