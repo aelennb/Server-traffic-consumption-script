@@ -8,52 +8,52 @@ on:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 180 # 预留充足时间，防止大网段扫描超时
+    timeout-minutes: 180
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. 安装系统级依赖 (masscan, prips 等)
+      # 1. 安装系统级依赖
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y masscan prips python3 curl jq
 
-      # 2. 克隆 ASNIPtest-New 项目
+      # 2. 克隆并预处理仓库
       - name: Clone Scanner Repository
         run: |
           git clone --depth 1 https://github.com/122440367/ASNIPtest-New.git scanner-src
           cd scanner-src
-          # 赋予执行权限
+          
+          # 核心修复 1：确保当前 runner 用户对目录有完全读写权限
+          chmod -R 777 ./
+          
+          # 核心修复 2：去除项目内部脚本可能带有的 sudo（避免生成 root 权限文件）
+          # 我们通过 setcap 已经赋予了 masscan 权限，不需要 sudo
+          find . -type f -name "*.py" -exec sed -i 's/sudo masscan/masscan/g' {} +
+          
           chmod +x *.py 2>/dev/null || true
 
-      # 3. 解决 masscan 权限问题并运行扫描
-      # 这个项目内置了 cf-scanner 编译和 API 验证逻辑
+      # 3. 赋予 masscan 底层权限并运行扫描
       - name: Run ASN IP Scan
         run: |
           cd scanner-src
           
-          # --- 配置区域 ---
-          # 在这里填入你要扫描的 ASN（可以填多个，用空格隔开，例如 AS906 AS25820）
-          TARGET_ASNS="AS62468"
-          # ----------------
-          
+          TARGET_ASNS="AS62468" # 替换为你要扫描的 ASN
           echo "开始扫描 ASN: $TARGET_ASNS"
           
-          # 给 masscan 提权，避免 Python 脚本内部调用时因权限报错
+          # 赋予 masscan 无需 root 即可发送原始包的权限
           sudo setcap cap_net_raw+ep /usr/bin/masscan
           
-          # 运行项目主程序
-          # 假设其入口是 run.py，将 ASN 作为参数传入
+          # 正常以 runner 用户运行 Python 脚本
           python3 run.py $TARGET_ASNS
 
-      # 4. 查找并上传结果 CSV
+      # 4. 上传结果 CSV
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
           name: asn-scan-results
-          # 项目默认输出通常为 output_latest.csv 或 result.csv
           path: |
             scanner-src/output_latest.csv
             scanner-src/result.csv
