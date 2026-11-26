@@ -1,0 +1,62 @@
+name: ASN CF Proxy Scanner (ASNIPtest-New)
+
+on:
+  workflow_dispatch: # 允许手动触发
+  schedule:
+    - cron: '0 19 * * 2' # 每周三北京时间 03:00 自动运行
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180 # 预留充足时间，防止大网段扫描超时
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. 安装系统级依赖 (masscan, prips 等)
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y masscan prips python3 curl jq
+
+      # 2. 克隆 ASNIPtest-New 项目
+      - name: Clone Scanner Repository
+        run: |
+          git clone --depth 1 https://github.com/122440367/ASNIPtest-New.git scanner-src
+          cd scanner-src
+          # 赋予执行权限
+          chmod +x *.py 2>/dev/null || true
+
+      # 3. 解决 masscan 权限问题并运行扫描
+      # 这个项目内置了 cf-scanner 编译和 API 验证逻辑
+      - name: Run ASN IP Scan
+        run: |
+          cd scanner-src
+          
+          # --- 配置区域 ---
+          # 在这里填入你要扫描的 ASN（可以填多个，用空格隔开，例如 AS906 AS25820）
+          TARGET_ASNS="AS62468"
+          # ----------------
+          
+          echo "开始扫描 ASN: $TARGET_ASNS"
+          
+          # 给 masscan 提权，避免 Python 脚本内部调用时因权限报错
+          sudo setcap cap_net_raw+ep /usr/bin/masscan
+          
+          # 运行项目主程序
+          # 假设其入口是 run.py，将 ASN 作为参数传入
+          python3 run.py $TARGET_ASNS
+
+      # 4. 查找并上传结果 CSV
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: asn-scan-results
+          # 项目默认输出通常为 output_latest.csv 或 result.csv
+          path: |
+            scanner-src/output_latest.csv
+            scanner-src/result.csv
+            scanner-src/*.csv
+          if-no-files-found: warn
+          retention-days: 7
