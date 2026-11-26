@@ -1,4 +1,4 @@
-name: ASN CF Proxy Scanner (ASNIPtest-New with cf-scanner)
+name: ASN CF Proxy Scanner (ASNIPtest-New)
 
 on:
   workflow_dispatch:
@@ -17,39 +17,28 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y masscan prips python3 curl jq git golang-go
+          sudo apt-get install -y masscan prips python3 curl jq wget
 
-      # 1. 克隆并编译 cf-scanner
-      - name: Build cf-scanner from source
-        run: |
-          # 克隆 m-rambod/CFScanner
-          git clone --depth 1 https://github.com/m-rambod/CFScanner.git cfscanner-src
-          cd cfscanner-src
-          
-          # 编译 (需要 Go 环境，上面已安装)
-          go build -o ../scanner-src/cf-scanner .
-          cd ..
-          
-          # 确认文件已生成且可执行
-          ls -la scanner-src/cf-scanner
-          chmod +x scanner-src/cf-scanner
-
-      # 2. 克隆 ASNIPtest-New 主项目
+      # 1. 克隆 ASNIPtest-New 主项目
       - name: Clone ASNIPtest-New
         run: |
           git clone --depth 1 https://github.com/122440367/ASNIPtest-New.git scanner-src
           cd scanner-src
           chmod +x *.py 2>/dev/null || true
 
-      # 3. 将编译好的 cf-scanner 复制到正确位置
-      - name: Place cf-scanner binary
+      # 2. 下载官方编译好的 cf-scanner 二进制
+      - name: Download pre-compiled cf-scanner
         run: |
-          # 确保 cf-scanner 在 scanner-src 目录下
-          cp cfscanner-src/cf-scanner scanner-src/cf-scanner 2>/dev/null || true
-          # 如果在编译步骤已经放好，这里只是再次确认
+          # MortezaBashsiz 的 Golang 版本提供了现成的二进制
+          # 下载并重命名为 cf-scanner，放入 scanner-src 目录
+          wget -q https://github.com/MortezaBashsiz/CFScanner/releases/download/v1.0.9/cfscanner-linux -O scanner-src/cf-scanner
+          
+          # 赋予执行权限并验证
+          chmod +x scanner-src/cf-scanner
           ls -la scanner-src/cf-scanner
+          ./scanner-src/cf-scanner --help || true
 
-      # 4. 运行主扫描脚本
+      # 3. 运行主扫描脚本
       - name: Run ASN IP Scan
         run: |
           cd scanner-src
@@ -57,12 +46,13 @@ jobs:
           TARGET_ASNS="AS62468" # 替换为你的目标 ASN
           echo "开始扫描 ASN: $TARGET_ASNS"
           
+          # 以 root 身份运行，避免 masscan 和文件权限问题
           sudo python3 run.py $TARGET_ASNS
           
           # 将文件所有权交还给 runner，以便上传
           sudo chown -R $USER:$USER .
 
-      # 5. 上传结果
+      # 4. 上传结果
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
