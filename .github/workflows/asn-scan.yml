@@ -1,9 +1,9 @@
-name: ASN CF Proxy Scanner (ASNIPtest-New)
+name: ASN CF Proxy Scanner (ASNIPtest-New with cf-scanner)
 
 on:
-  workflow_dispatch: # 允许手动触发
+  workflow_dispatch:
   schedule:
-    - cron: '0 19 * * 2' # 每周三北京时间 03:00 自动运行
+    - cron: '0 19 * * 2'
 
 jobs:
   scan:
@@ -14,39 +14,55 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. 安装系统级依赖
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y masscan prips python3 curl jq
+          sudo apt-get install -y masscan prips python3 curl jq git golang-go
 
-      # 2. 克隆项目
-      - name: Clone Scanner Repository
+      # 1. 克隆并编译 cf-scanner
+      - name: Build cf-scanner from source
+        run: |
+          # 克隆 m-rambod/CFScanner
+          git clone --depth 1 https://github.com/m-rambod/CFScanner.git cfscanner-src
+          cd cfscanner-src
+          
+          # 编译 (需要 Go 环境，上面已安装)
+          go build -o ../scanner-src/cf-scanner .
+          cd ..
+          
+          # 确认文件已生成且可执行
+          ls -la scanner-src/cf-scanner
+          chmod +x scanner-src/cf-scanner
+
+      # 2. 克隆 ASNIPtest-New 主项目
+      - name: Clone ASNIPtest-New
         run: |
           git clone --depth 1 https://github.com/122440367/ASNIPtest-New.git scanner-src
           cd scanner-src
           chmod +x *.py 2>/dev/null || true
 
-      # 3. 使用 root 权限运行（彻底解决 masscan 权限问题）
+      # 3. 将编译好的 cf-scanner 复制到正确位置
+      - name: Place cf-scanner binary
+        run: |
+          # 确保 cf-scanner 在 scanner-src 目录下
+          cp cfscanner-src/cf-scanner scanner-src/cf-scanner 2>/dev/null || true
+          # 如果在编译步骤已经放好，这里只是再次确认
+          ls -la scanner-src/cf-scanner
+
+      # 4. 运行主扫描脚本
       - name: Run ASN IP Scan
         run: |
           cd scanner-src
           
-          # --- 配置区域 ---
-          TARGET_ASNS="AS62468"
-          # ----------------
-          
+          TARGET_ASNS="AS62468" # 替换为你的目标 ASN
           echo "开始扫描 ASN: $TARGET_ASNS"
           
-          # 核心修复：直接以 root 身份运行脚本
-          # 这样里面的 masscan 拥有最高权限，且生成的文件也属于 root
           sudo python3 run.py $TARGET_ASNS
           
-          # 关键收尾：把整个目录的属主改回 runner 用户
-          # 否则下一步的 upload-artifact 会因为无法读取 root 文件而失败
+          # 将文件所有权交还给 runner，以便上传
           sudo chown -R $USER:$USER .
 
-      # 4. 上传结果 CSV
+      # 5. 上传结果
       - name: Upload Results
         uses: actions/upload-artifact@v4
         with:
